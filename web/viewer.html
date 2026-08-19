@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>環境モニタ</title>
+<style>
+:root{
+  --bg:#0e131b; --panel:#18202b; --panel2:#1f2937; --line:#2b3644;
+  --fg:#eef3f8; --muted:#8f9db0;
+  --lv1:#4a9edb; --lv2:#3fb96f; --lv3:#e8c020; --lv4:#f0801c; --lv5:#e4443a;
+  --off:#5b6675; --temp:#f0801c; --hum:#4a9edb; --globe:#c07ae0;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:"Yu Gothic UI","Meiryo","Hiragino Kaku Gothic ProN",
+              "Noto Sans CJK JP","Noto Sans JP","IPAexGothic",sans-serif;
+  overflow:hidden; display:flex; flex-direction:column;
+}
+
+/* ---------- ヘッダ ---------- */
+header{
+  display:flex; align-items:center; gap:24px;
+  padding:16px 30px; border-bottom:1px solid var(--line); flex:none;
+}
+h1{font-size:32px; font-weight:800; letter-spacing:.02em}
+h1 small{display:block; font-size:15px; font-weight:500; color:var(--muted); margin-top:4px}
+.hspacer{flex:1}
+.clock{font-size:36px; font-weight:700; font-variant-numeric:tabular-nums}
+/* 実センサの値と見間違えないように、ダミー中は常に出しておく */
+.dummy{padding:7px 16px; border-radius:999px; background:var(--lv4); color:#0d1117;
+       font-size:17px; font-weight:800; letter-spacing:.04em}
+
+/* ---------- レイアウト ---------- */
+main{flex:1; display:grid; grid-template-columns:1fr 560px; min-height:0}
+section{padding:16px 24px; min-height:0; display:flex; flex-direction:column}
+#detail{border-left:1px solid var(--line); background:var(--panel)}
+
+/* ---------- パンくず ---------- */
+.crumbs{display:flex; align-items:center; gap:8px; font-size:19px; flex:none; margin-bottom:10px; height:30px}
+.crumbs b{font-weight:800}
+.crumbs a{color:var(--muted); cursor:pointer; text-decoration:none}
+.crumbs a:hover{color:var(--fg)}
+.crumbs i{color:#3c4757; font-style:normal}
+
+/* ---------- 地図 ---------- */
+.maparea{flex:1; min-height:0; display:flex; gap:14px}
+.floors{width:96px; flex:none; display:flex; flex-direction:column-reverse; gap:6px; justify-content:flex-start}
+.floors button{
+  flex:0 0 auto; padding:12px 6px; cursor:pointer; font:inherit; text-align:center;
+  background:var(--panel2); color:var(--fg); border:1px solid var(--line);
+  border-left:6px solid var(--off); border-radius:8px; font-size:20px; font-weight:800;
+}
+.floors button.on{background:var(--fg); color:#0d1117}
+.floors button span{display:block; font-size:12px; font-weight:600; opacity:.7; margin-top:3px}
+.mapwrap{flex:1; min-height:0; position:relative; background:#111823;
+         border:1px solid var(--line); border-radius:10px; overflow:hidden}
+.mapwrap svg{width:100%; height:100%; display:block; cursor:grab; touch-action:none}
+.mapwrap svg.drag{cursor:grabbing}
+.note{position:absolute; right:10px; bottom:8px; font-size:13px; color:var(--muted);
+      background:rgba(10,14,20,.8); padding:5px 10px; border-radius:6px; pointer-events:none}
+.blank{position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+       text-align:center; font-size:20px; color:var(--muted); line-height:1.9; padding:30px}
+.blank.on{display:flex}
+
+/* ---------- 部屋 ---------- */
+.room{cursor:pointer}
+.room .rbg{fill:#2a3746; fill-opacity:.22; stroke:#465a72; stroke-width:2;
+           vector-effect:non-scaling-stroke; transition:fill-opacity .4s}
+.room:hover .rbg{fill-opacity:.42}
+.room .rname{fill:#c6d3e2; font-weight:700; text-anchor:middle; pointer-events:none}
+.room .rsub{fill:var(--muted); font-weight:600; text-anchor:middle; pointer-events:none}
+#map[data-det="near"] .room .rname,
+#map[data-det="near"] .room .rsub{opacity:.35}
+
+/* ---------- ピン ---------- */
+.pin{cursor:pointer}
+.pin .dot{fill:var(--off); stroke:rgba(255,255,255,.85); stroke-width:2.5; transition:fill .5s}
+.pin .halo{fill:none; stroke:#fff; stroke-width:3; opacity:0}
+.pin[data-sel="1"] .halo{opacity:.5}
+.pin .num{fill:#0d1117; font-weight:800; font-size:20px; text-anchor:middle}
+.pin .lbox{fill:rgba(10,14,20,.9); stroke:var(--line); stroke-width:1}
+.pin .ltext{fill:var(--fg); font-weight:700; font-size:16px; text-anchor:middle}
+.pin .lval{fill:var(--muted); font-weight:600; font-size:14px; text-anchor:middle}
+.pin[data-off="1"] .ltext,.pin[data-off="1"] .num{opacity:.55}
+.pin .lbox,.pin .ltext,.pin .lval{transition:opacity .25s}
+#map[data-det="far"] .pin .lbox,
+#map[data-det="far"] .pin .ltext,
+#map[data-det="far"] .pin .lval{opacity:0}
+#map .pin[data-sel="1"] .lbox,
+#map .pin[data-sel="1"] .ltext,
+#map .pin[data-sel="1"] .lval{opacity:1}
+
+@keyframes ping{from{transform:scale(1); opacity:.7} to{transform:scale(2.4); opacity:0}}
+.ping{transform-box:fill-box; transform-origin:center; pointer-events:none;
+      animation:ping 1.3s ease-out}
+
+/* ---------- 凡例 ---------- */
+.legend{display:flex; gap:8px; margin-top:12px; flex:none}
+.lg{flex:1; padding:8px 4px; border-radius:8px; text-align:center; font-size:14px; font-weight:700; color:#0d1117}
+.lg span{display:block; font-size:11px; font-weight:600; opacity:.72; margin-top:2px}
+
+/* ---------- 詳細パネル ---------- */
+.dname{font-size:38px; font-weight:800}
+.dsub{font-size:16px; color:var(--muted); margin-top:4px}
+.wbgtbox{margin:16px 0; padding:18px 24px; border-radius:14px; background:var(--panel2)}
+.wlabel{font-size:15px; color:var(--muted); font-weight:700; letter-spacing:.08em}
+.wnum{font-size:112px; font-weight:800; line-height:.95; font-variant-numeric:tabular-nums}
+.wnum small{font-size:32px; font-weight:700; color:var(--muted); margin-left:10px}
+.badge{display:inline-block; margin-top:8px; padding:8px 22px; border-radius:999px;
+       font-size:25px; font-weight:800; color:#0d1117}
+.stats{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px}
+.st{background:var(--panel2); border-radius:12px; padding:14px 16px}
+.st .k{font-size:14px; color:var(--muted); font-weight:700}
+.st .v{font-size:40px; font-weight:800; font-variant-numeric:tabular-nums; margin-top:4px}
+.st .v u{font-size:18px; text-decoration:none; color:var(--muted); margin-left:3px}
+@keyframes flash{0%{color:#fff} 100%{color:inherit}}
+.upd{animation:flash 1.1s ease-out}
+
+/* ---------- グラフ ---------- */
+.trend{margin-top:16px; flex:1; min-height:140px; display:flex; flex-direction:column}
+.trendhead{display:flex; align-items:center; margin-bottom:8px; flex:none}
+.trendhead .k{font-size:14px; color:var(--muted); font-weight:700; flex:1}
+.segs{display:flex; gap:5px}
+.segs button{
+  padding:6px 13px; border-radius:8px; cursor:pointer; font:inherit;
+  font-size:15px; font-weight:700; background:var(--panel2);
+  color:var(--muted); border:1px solid var(--line);
+}
+.segs button.on{background:var(--fg); color:#0d1117; border-color:var(--fg)}
+.trend svg{flex:1; width:100%}
+.foot{margin-top:12px; padding-top:12px; border-top:1px solid var(--line);
+      font-size:15px; color:var(--muted); display:flex; justify-content:space-between}
+.foot b{color:var(--fg); font-variant-numeric:tabular-nums}
+.hint{position:fixed; left:12px; bottom:8px; font-size:12px; color:#3c4757}
+.hint a{color:#54677f}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="title">環境モニタ <small id="subtitle">読み込み中…</small></h1>
+  <div class="hspacer"></div>
+  <div class="dummy" id="dummy" hidden>ダミーデータ</div>
+  <div class="clock" id="clock">--:--:--</div>
+</header>
+
+<main>
+  <section>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="maparea">
+      <div class="floors" id="floors"></div>
+      <div class="mapwrap">
+        <svg id="map" preserveAspectRatio="none"></svg>
+        <div class="note" id="note" hidden></div>
+        <div class="blank" id="blank"></div>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section id="detail">
+    <div class="dname" id="dname">--</div>
+    <div class="dsub" id="dsub">--</div>
+
+    <div class="wbgtbox">
+      <div class="wlabel">WBGT（暑さ指数）</div>
+      <div class="wnum" id="wnum">--<small>℃</small></div>
+      <div class="badge" id="wbadge">--</div>
+    </div>
+
+    <div class="stats">
+      <div class="st"><div class="k">気温</div><div class="v" id="s-t">--</div></div>
+      <div class="st"><div class="k">湿度</div><div class="v" id="s-h">--</div></div>
+      <div class="st"><div class="k">黒球温度</div><div class="v" id="s-g">--</div></div>
+    </div>
+
+    <div class="trend">
+      <div class="trendhead">
+        <div class="k" id="trendk">WBGTの推移</div>
+        <div class="segs" id="segs">
+          <button data-m="wbgt" class="on">WBGT</button>
+          <button data-m="t">気温</button>
+          <button data-m="h">湿度</button>
+          <button data-m="g">黒球</button>
+        </div>
+      </div>
+      <svg id="spark" viewBox="0 0 560 150" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="foot">
+      <div>ノード <b id="f-id">--</b></div>
+      <div>計測時刻 <b id="f-at">--</b></div>
+    </div>
+  </section>
+</main>
+
+<div class="hint">ホイール: 拡大縮小 / ドラッグ: 移動 / 部屋クリック: 寄る / Esc: 戻る / F11: 全画面 &nbsp;·&nbsp; <a href="editor">配置を編集</a></div>
+
+<script>
+"use strict";
+const SVGNS = "http://www.w3.org/2000/svg";
+
+/* ====== 設定 ====== */
+const API_LATEST = "api/latest";
+const API_SITE   = "api/site";
+const POLL_MS    = 5000;    // 画面の更新間隔
+const HISTORY    = 30;      // グラフに出す点数
+const STALE_SEC  = 1500;    // 最後の計測からこれを超えたら「応答なし」（25分）
+const NEAR_RATIO = 0.6;     // 表示中の幅がフロア幅のこの割合を切ったら「寄っている」
+
+/* WBGT区分（環境省の熱中症予防運動指針に準拠） */
+const LEVELS = [
+  {min:31,  name:"危険",     col:"var(--lv5)", note:"作業は原則中止"},
+  {min:28,  name:"厳重警戒", col:"var(--lv4)", note:"激しい作業は中止"},
+  {min:25,  name:"警戒",     col:"var(--lv3)", note:"積極的に休憩を"},
+  {min:21,  name:"注意",     col:"var(--lv2)", note:"水分補給を"},
+  {min:-99, name:"ほぼ安全", col:"var(--lv1)", note:"通常どおり"},
+];
+const levelOf = w => LEVELS.find(l => w >= l.min);
+
+/* グラフで切り替える項目 */
+const METRICS = {
+  wbgt:{label:"WBGT",     unit:"℃", col:null},        // col:null = 危険度の色を使う
+  t   :{label:"気温",     unit:"℃", col:"var(--temp)"},
+  h   :{label:"湿度",     unit:"%",  col:"var(--hum)"},
+  g   :{label:"黒球温度", unit:"℃", col:"var(--globe)"},
+};
+
+/* ====== 状態 ====== */
+let site     = {title:"環境モニタ", floors:[], nodes:[]};
+let byId     = new Map();      // ノードID -> 定義
+let floorIdx = 0;
+let zoomRoom = null;           // 寄っている部屋のID（null = フロア全体）
+let selected = null;           // 選択中のノードID
+let metric   = "wbgt";
+let unreg    = [];             // site.json に定義がないノードID
+const state  = new Map();      // ノードID -> {t,h,g,wbgt,atText,ageSec,recvAt,hist}
+const layers = new Map();      // フロアID -> {g, pins:Map, texts:[]}
+
+const $ = id => document.getElementById(id);
+const fmt1 = v => (v === null || v === undefined || Number.isNaN(v)) ? null : v.toFixed(1);
+const F  = () => site.floors[floorIdx];
+
+function el(tag, attrs){
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) if (attrs[k] !== null) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+/* ====== WBGT（firmware/src/function.cpp の calculateWBGT をそのまま移植） ====== */
+function calculateWBGT(t, h, tg){
+  const tw = t * Math.atan(0.151977 * Math.sqrt(h + 8.313659))
+           + Math.atan(t + h)
+           - Math.atan(h - 1.676331)
+           + 0.00391838 * Math.pow(h, 1.5) * Math.atan(0.023101 * h)
+           - 4.686035;
+  return 0.7 * tw + 0.3 * tg;
+}
+
+/* ====== ノードの状態 ====== */
+/* 計測時刻からの経過秒。サーバが止まっても進み続けるよう受信時刻を足す */
+const ageOf = r => r.ageSec + (Date.now() - (r.recvAt || Date.now())) / 1000;
+
+/* "ok" = 正常 / "stale" = 応答なし / "fail" = 返事は来たがセンサ計測に失敗 */
+function stateOf(id){
+  const r = state.get(id);
+  if (!r) return "stale";
+  if (!(ageOf(r) < STALE_SEC)) return "stale";
+  return (r.wbgt === null || r.wbgt === undefined) ? "fail" : "ok";
+}
+const DEAD_TEXT = {stale:"応答なし", fail:"計測失敗"};
+
+/* 与えたノード群のうち最も危険な区分。1つも正常値がなければ null */
+function worstOf(nodes){
+  let worst = null;
+  for (const n of nodes){
+    if (stateOf(n.id) !== "ok") continue;
+    const lv = levelOf(state.get(n.id).wbgt);
+    if (!worst || lv.min > worst.min) worst = lv;
+  }
+  return worst;
+}
+const inRoom = (n, r) => n.x >= r.x && n.x <= r.x + r.w && n.y >= r.y && n.y <= r.y + r.h;
+const nodesOfFloor = f => site.nodes.filter(n => n.floor === f.id);
+const nodesOfRoom  = (f, r) => nodesOfFloor(f).filter(n => inRoom(n, r));
+
+/* ====== 起動 ====== */
+async function boot(){
+  try{
+    const res = await fetch(API_SITE, {cache:"no-store"});
+    site = await res.json();
+  }catch(err){
+    $("blank").textContent = "site.json を読めませんでした。server.py 経由で開いてください。";
+    $("blank").classList.add("on");
+    return;
+  }
+  if (site.title) { document.title = site.title; }
+  $("title").firstChild.nodeValue = (site.title || "環境モニタ") + " ";
+  $("subtitle").textContent = site.subtitle || "";
+
+  byId = new Map(site.nodes.map(n => [n.id, n]));
+  selected = site.nodes.length ? site.nodes[0].id : null;
+  if (selected !== null) floorIdx = Math.max(0, site.floors.findIndex(f => f.id === byId.get(selected).floor));
+
+  buildLegend();
+  buildFloorButtons();
+  buildLayers();
+  showFloor(floorIdx, false);
+  render();
+  poll();
+  setInterval(poll, POLL_MS);
+}
+
+/* ====== 地図の組み立て（起動時に全フロア分つくって表示を切り替える） ====== */
+function buildLayers(){
+  const svg = $("map");
+  svg.innerHTML = "";
+  layers.clear();
+
+  if (!site.floors.length){
+    $("blank").textContent = "フロアが定義されていません。「配置を編集」から作成してください。";
+    $("blank").classList.add("on");
+    return;
+  }
+
+  for (const f of site.floors){
+    const g = el("g", {style:"display:none"});
+    const texts = [], pins = new Map();
+
+    /* 下敷き（画像がなければ無地） */
+    if (f.image) g.appendChild(el("image", {href:f.image, x:0, y:0, width:f.w, height:f.h,
+                                            class:"bgimg", style:bgFilter(f.view)}));
+    else         g.appendChild(el("rect",  {x:0, y:0, width:f.w, height:f.h, fill:"#141c26"}));
+
+    /* 部屋 */
+    for (const r of (f.rooms || [])){
+      const rg = el("g", {class:"room", "data-room":r.id});
+      rg.appendChild(el("rect", {class:"rbg", x:r.x, y:r.y, width:r.w, height:r.h, rx:6}));
+      const nm = el("text", {class:"rname", x:r.x + r.w/2, y:r.y + r.h/2});
+      nm.textContent = r.name;
+      const sb = el("text", {class:"rsub", x:r.x + r.w/2, y:r.y + r.h/2});
+      rg.appendChild(nm); rg.appendChild(sb);
+      texts.push({e:nm, px:26, dy:-4}, {e:sb, px:16, dy:22});
+      g.appendChild(rg);
+    }
+
+    /* ピン */
+    for (const n of nodesOfFloor(f)){
+      const pg = el("g", {class:"pin", "data-node":n.id});
+      pg.appendChild(el("circle", {class:"halo", r:34}));
+      pg.appendChild(el("circle", {class:"dot",  r:25}));
+      const num = el("text", {class:"num", y:7}); num.textContent = n.id;
+      pg.appendChild(num);
+
+      const box  = el("rect", {class:"lbox", rx:5});
+      const name = el("text", {class:"ltext", y:54}); name.textContent = n.name || ("node " + n.id);
+      pg.appendChild(box); pg.appendChild(name);
+      const val = el("text", {class:"lval", y:76}); val.textContent = "--";
+      pg.appendChild(val);
+
+      g.appendChild(pg);
+      pins.set(n.id, {g:pg, dot:pg.querySelector(".dot"), val, box, name, node:n});
+    }
+    svg.appendChild(g);
+    layers.set(f.id, {g, pins, texts, floor:f});
+  }
+
+  /* 文字の背景ボックスは、日本語の幅を推定できないので実測して合わせる */
+  for (const L of layers.values()){
+    L.g.style.display = "";
+    for (const p of L.pins.values()){
+      const b = p.name.getBBox();
+      p.box.setAttribute("x", b.x - 9);
+      p.box.setAttribute("y", b.y - 4);
+      p.box.setAttribute("width",  b.width + 18);
+      p.box.setAttribute("height", b.height + 8);
+    }
+    L.g.style.display = "none";
+  }
+}
+
+function bgFilter(v){
+  if (v === "invert") return "filter:invert(1) hue-rotate(180deg) brightness(.86)";
+  if (v === "dim")    return "filter:brightness(.45) contrast(1.1)";
+  return "";
+}
+
+/* ====== 表示範囲（viewBox）====== */
+let view = {x:0, y:0, w:100, h:100};
+let goal = null;
+let k = 1;                      // 画像1単位 = 画面 1/k px
+
+/* 与えた矩形を、地図枠の縦横比に合わせて広げる（レターボックスを作らない） */
+function fit(rect){
+  const b = $("map").getBoundingClientRect();
+  if (b.width < 2 || b.height < 2) return rect;   // 描画枠が確定する前は測り直しに任せる
+  const ar = b.width / b.height;
+  let {x, y, w, h} = rect;
+  if (w / h < ar){ const nw = h * ar; x -= (nw - w) / 2; w = nw; }
+  else           { const nh = w / ar; y -= (nh - h) / 2; h = nh; }
+  return {x, y, w, h};
+}
+
+function zoomFloor(animate = true){
+  zoomRoom = null;
+  setGoal(fit({x:0, y:0, w:F().w, h:F().h}), animate);
+  updateCrumbs();
+}
+function zoomToRoom(id, animate = true){
+  const r = (F().rooms || []).find(v => v.id === id);
+  if (!r) return;
+  zoomRoom = id;
+  const m = Math.max(r.w, r.h) * 0.10;
+  setGoal(fit({x:r.x - m, y:r.y - m, w:r.w + m*2, h:r.h + m*2}), animate);
+  updateCrumbs();
+}
+function setGoal(g, animate){
+  if (animate) goal = g;
+  else { goal = null; view = g; applyView(); }
+}
+
+function applyView(){
+  const svg = $("map");
+  svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+  const b = svg.getBoundingClientRect();
+  k = view.w / Math.max(b.width, 1);
+
+  const L = layers.get(F().id);
+  if (!L) return;
+  /* ピンと文字は画面上で常に同じ大きさに保つ（寄っても巨大化させない） */
+  for (const p of L.pins.values())
+    p.g.setAttribute("transform", `translate(${p.node.x},${p.node.y}) scale(${k})`);
+  for (const t of L.texts){
+    t.e.setAttribute("font-size", t.px * k);
+    t.e.setAttribute("dy", t.dy * k);
+  }
+  svg.dataset.det = (view.w < F().w * NEAR_RATIO) ? "near" : "far";
+}
+
+(function animate(){
+  if (goal){
+    let done = true;
+    for (const p of ["x","y","w","h"]){
+      const d = goal[p] - view[p];
+      if (Math.abs(d) > goal.w * 0.002) done = false;
+      view[p] += d * 0.22;
+    }
+    if (done){ view = Object.assign({}, goal); goal = null; }
+    applyView();
+  }
+  requestAnimationFrame(animate);
+})();
+
+function zoomAt(cx, cy, factor){
+  const f = F();
+  const w = Math.min(Math.max(view.w * factor, f.w / 20), f.w * 2.0);
+  const s = w / view.w;
+  view = {x: cx - (cx - view.x) * s, y: cy - (cy - view.y) * s, w, h: view.h * s};
+  applyView();
+}
+
+/* ====== フロア切り替え ====== */
+function buildFloorButtons(){
+  $("floors").innerHTML = site.floors.map((f, i) =>
+    `<button data-i="${i}">${f.name}<span>${nodesOfFloor(f).length}点</span></button>`).join("");
+}
+function showFloor(i, animate = true){
+  floorIdx = i;
+  for (const L of layers.values()) L.g.style.display = "none";
+  const L = layers.get(F().id);
+  if (L) L.g.style.display = "";
+  [...$("floors").children].forEach((b, j) => b.classList.toggle("on", j === i));
+  zoomFloor(animate);
+  render();
+}
+
+function updateCrumbs(){
+  const f = F();
+  if (!f){ $("crumbs").innerHTML = ""; return; }
+  const room = zoomRoom && (f.rooms || []).find(r => r.id === zoomRoom);
+  $("crumbs").innerHTML =
+    (room ? `<a data-to="floor">${f.name}</a> <i>›</i> <b>${room.name}</b>`
+          : `<b>${f.name}</b>`) +
+    (room ? "" : ` <i>›</i> <a style="pointer-events:none">部屋を選ぶ</a>`);
+}
+
+/* ====== 実データ取得 ====== */
+async function poll(){
+  try{
+    const res = await fetch(API_LATEST, {cache:"no-store"});
+    if (!res.ok) throw new Error(res.status);
+    apply(await res.json());
+  }catch(err){
+    /* 取得できなくても最後の値を出したまま経過時間だけ進める（やがて応答なしになる） */
+  }
+}
+
+function apply(json){
+  $("dummy").hidden = !json.dummy;
+  const unknown = [];
+  for (const nd of json.nodes || []){
+    if (!byId.has(nd.id)){ unknown.push(nd.id); continue; }
+    const prev = state.get(nd.id), L = nd.latest;
+    const rec = {
+      t: L && L.t, h: L && L.h, g: L && L.g, wbgt: L && L.wbgt,
+      atText: L ? L.at : null,
+      ageSec: L ? L.age_sec : Infinity,
+      recvAt: Date.now(),
+      hist  : (nd.history || []).slice(-HISTORY),
+    };
+    state.set(nd.id, rec);
+    if (prev && L && prev.atText !== rec.atText) pingPin(nd.id);   // 計測が進んだ瞬間だけ波紋
+  }
+  unreg = unknown;
+  const note = $("note");
+  note.hidden = !unknown.length;
+  note.textContent = unknown.length ? "未登録: node " + unknown.join(", ") : "";
+  render();
+}
+
+function pingPin(id){
+  const L = layers.get(F().id), p = L && L.pins.get(id), rec = state.get(id);
+  if (!p || !rec || rec.wbgt === null || rec.wbgt === undefined) return;
+  const c = el("circle", {class:"ping", r:25, fill:levelOf(rec.wbgt).col});
+  p.g.insertBefore(c, p.g.firstChild);
+  setTimeout(() => c.remove(), 1300);
+}
+
+/* ====== 描画 ====== */
+function buildLegend(){
+  const rows = [
+    {n:"ほぼ安全", c:"var(--lv1)", r:"21未満"},
+    {n:"注意",     c:"var(--lv2)", r:"21〜25"},
+    {n:"警戒",     c:"var(--lv3)", r:"25〜28"},
+    {n:"厳重警戒", c:"var(--lv4)", r:"28〜31"},
+    {n:"危険",     c:"var(--lv5)", r:"31以上"},
+  ];
+  $("legend").innerHTML = rows.map(r =>
+    `<div class="lg" style="background:${r.c}">${r.n}<span>WBGT ${r.r}</span></div>`).join("");
+}
+
+function render(){
+  if (!site.floors.length) return;
+  const f = F(), L = layers.get(f.id);
+
+  /* 階の色は、その階で最も危険な区分 */
+  site.floors.forEach((fl, i) => {
+    const w = worstOf(nodesOfFloor(fl));
+    $("floors").children[i].style.borderLeftColor = w ? w.col : "var(--off)";
+  });
+
+  if (L){
+    /* 部屋は、内包するノードの最悪区分で塗る */
+    for (const r of (f.rooms || [])){
+      const ns = nodesOfRoom(f, r);
+      const w  = worstOf(ns);
+      const rg = L.g.querySelector(`[data-room="${r.id}"]`);
+      rg.querySelector(".rbg").style.fill = w ? w.col : "";
+      rg.querySelectorAll("text")[1].textContent =
+        ns.length ? (w ? `${ns.length}点 / 最大 WBGT ${fmt1(Math.max(...ns.filter(n=>stateOf(n.id)==="ok").map(n=>state.get(n.id).wbgt)))}`
+                       : `${ns.length}点 / 応答なし`)
+                  : "";
+    }
+    /* ピン */
+    for (const p of L.pins.values()){
+      const st = stateOf(p.node.id), rec = state.get(p.node.id);
+      p.g.dataset.sel = selected === p.node.id ? "1" : "0";
+      p.g.dataset.off = st === "ok" ? "0" : "1";
+      p.dot.style.fill = st === "ok" ? levelOf(rec.wbgt).col : "";
+      p.val.textContent = st === "ok" ? "WBGT " + fmt1(rec.wbgt) : DEAD_TEXT[st];
+    }
+  }
+  renderDetail();
+}
+
+let lastShown = null;
+function renderDetail(){
+  const n = byId.get(selected);
+  $("trendk").textContent = METRICS[metric].label + "の推移";
+
+  if (!n){
+    $("dname").textContent = site.nodes.length ? "ノードを選んでください" : "ノードが未配置です";
+    $("dsub").textContent  = site.nodes.length ? "地図の丸をクリック" : "「配置を編集」から配置してください";
+    $("wnum").innerHTML = "--<small>℃</small>";
+    $("wbadge").textContent = "--"; $("wbadge").style.background = "var(--off)";
+    ["s-t","s-h","s-g"].forEach(id => $(id).innerHTML = "--");
+    $("spark").innerHTML = "";
+    return;
+  }
+
+  const rec = state.get(selected), st = stateOf(selected);
+  const fl  = site.floors.find(f => f.id === n.floor);
+  const rm  = fl && (fl.rooms || []).find(r => inRoom(n, r));
+  $("dname").textContent = n.name || ("node " + n.id);
+  $("dsub").textContent  = [fl && fl.name, rm && rm.name, n.sub].filter(Boolean).join(" ・ ");
+  $("f-id").textContent  = "No." + n.id;
+
+  if (st !== "ok" || !rec){
+    $("wnum").innerHTML = "--<small>℃</small>";
+    $("wnum").style.color = "var(--off)";
+    $("wbadge").textContent = DEAD_TEXT[st];
+    $("wbadge").style.background = "var(--off)";
+    ["s-t","s-h","s-g"].forEach(id => $(id).innerHTML = "--");
+    $("f-at").textContent = (st === "fail" && rec) ? rec.atText : "—";
+    $("spark").innerHTML = "";
+    return;
+  }
+
+  const lv = levelOf(rec.wbgt);
+  $("wnum").innerHTML   = fmt1(rec.wbgt) + "<small>℃</small>";
+  $("wnum").style.color = lv.col;
+  $("wbadge").textContent      = lv.name + " — " + lv.note;
+  $("wbadge").style.background = lv.col;
+
+  const put = (id, v, u) => $(id).innerHTML = (fmt1(v) === null) ? "計測失敗" : fmt1(v) + "<u>" + u + "</u>";
+  put("s-t", rec.t, "℃");
+  put("s-h", rec.h, "%");
+  put("s-g", rec.g, "℃");
+
+  /* 計測から回収までの遅れがあるので、計測時刻と経過を出す */
+  const ago = Math.round(ageOf(rec) / 60);
+  $("f-at").textContent = rec.atText + (ago >= 1 ? `（${ago}分前）` : "");
+
+  const key = selected + ":" + rec.atText;
+  if (key !== lastShown){
+    lastShown = key;
+    ["s-t","s-h","s-g"].forEach(id => {
+      $(id).classList.remove("upd"); void $(id).offsetWidth; $(id).classList.add("upd");
+    });
+  }
+  drawSpark(rec.hist, lv.col);
+}
+
+function drawSpark(hist, lvcol){
+  const W = 560, H = 150, P = 14;
+  const m   = METRICS[metric];
+  const col = m.col || lvcol;
+  const vals = (hist || []).map(r => r[metric]).filter(v => typeof v === "number" && !Number.isNaN(v));
+  if (vals.length < 2){ $("spark").innerHTML = ""; return; }
+
+  const span = Math.max(...vals) - Math.min(...vals);
+  const pad  = Math.max(span * 0.15, 0.5);
+  const lo = Math.min(...vals) - pad, hi = Math.max(...vals) + pad;
+  const px = i => P + i * (W - P * 2) / (HISTORY - 1);
+  const py = v => H - P - (v - lo) / (hi - lo) * (H - P * 2);
+
+  const pts  = vals.map((v, i) => px(i) + "," + py(v)).join(" ");
+  const area = `${px(0)},${H} ${pts} ${px(vals.length - 1)},${H}`;
+  const last = vals[vals.length - 1];
+  const txt  = (v, y, anchor) =>
+    `<text x="${W - 4}" y="${y}" text-anchor="${anchor}" fill="#8f9db0"
+       font-size="15" font-weight="600">${v.toFixed(1)}${m.unit}</text>`;
+
+  $("spark").innerHTML =
+    `<polygon points="${area}" fill="${col}" opacity=".16"/>` +
+    `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="4"
+       stroke-linejoin="round" stroke-linecap="round"/>` +
+    `<circle cx="${px(vals.length - 1)}" cy="${py(last)}" r="7" fill="${col}"/>` +
+    txt(hi - pad, 18, "end") + txt(lo + pad, H - 4, "end");
+}
+
+/* ====== 操作 ====== */
+const svg = $("map");
+let drag = null, moved = false, hit = null;
+
+svg.addEventListener("pointerdown", e => {
+  drag = {x:e.clientX, y:e.clientY};
+  moved = false;
+  /* ポインタを捕まえると click の行き先が svg 自身になってピンを拾えないので、
+     押した瞬間の要素を覚えておき、離したときにそれで判定する */
+  hit = e.target;
+  try{ svg.setPointerCapture(e.pointerId); }catch(err){}
+  svg.classList.add("drag");
+});
+svg.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+  drag.x = e.clientX; drag.y = e.clientY;
+  goal = null;
+  view.x -= dx * k; view.y -= dy * k;
+  applyView();
+});
+svg.addEventListener("pointerup", e => {
+  drag = null;
+  svg.classList.remove("drag");
+  if (moved || !hit) return;                       // 動かしたなら地図を掴んだだけ
+  const pin = hit.closest("[data-node]");
+  if (pin){ selected = +pin.dataset.node; render(); return; }
+  const room = hit.closest("[data-room]");
+  if (room){ zoomToRoom(room.dataset.room); return; }
+  zoomFloor();
+});
+svg.addEventListener("wheel", e => {
+  e.preventDefault();
+  goal = null;
+  const b = svg.getBoundingClientRect();
+  zoomAt(view.x + (e.clientX - b.left) / b.width  * view.w,
+         view.y + (e.clientY - b.top ) / b.height * view.h,
+         Math.exp(e.deltaY * 0.0015));
+}, {passive:false});
+
+$("floors").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (b) showFloor(+b.dataset.i);
+});
+$("crumbs").addEventListener("click", e => {
+  if (e.target.dataset.to === "floor") zoomFloor();
+});
+
+function setMetric(m){
+  metric = m;
+  [...$("segs").children].forEach(b => b.classList.toggle("on", b.dataset.m === m));
+  renderDetail();
+}
+$("segs").addEventListener("click", e => { if (e.target.dataset.m) setMetric(e.target.dataset.m); });
+
+document.addEventListener("keydown", e => {
+  const k2 = e.key.toLowerCase();
+  if (e.key === "Escape") zoomFloor();
+  if (k2 === "w") setMetric("wbgt");
+  if (k2 === "t") setMetric("t");
+  if (k2 === "h") setMetric("h");
+  if (k2 === "g") setMetric("g");
+  if (k2 === "[") showFloor(Math.max(0, floorIdx - 1));
+  if (k2 === "]") showFloor(Math.min(site.floors.length - 1, floorIdx + 1));
+});
+
+/* 地図枠の大きさが決まった時点と、変わるたびに縮尺を取り直す。
+   起動直後はレイアウトが確定していないので、resize イベントでは間に合わない */
+new ResizeObserver(() => {
+  if (!site.floors.length) return;
+  if (zoomRoom) zoomToRoom(zoomRoom, false); else zoomFloor(false);
+}).observe($("map"));
+
+/* 時計と、経過時間の表示を1秒ごとに更新 */
+setInterval(() => {
+  $("clock").textContent = new Date().toLocaleTimeString("ja-JP");
+  render();
+}, 1000);
+
+boot();
+</script>
+</body>
+</html>

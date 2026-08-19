@@ -1,0 +1,11 @@
+# PlatformIO
+firmware/.pio/
+.vscode/
+
+# 計測データ
+data.csv
+
+# アップロードした平面図（施設情報を含みうるので追跡しない）
+web/maps/
+
+__pycache__/

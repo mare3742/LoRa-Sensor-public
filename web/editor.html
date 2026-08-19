@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>配置エディタ</title>
+<style>
+:root{
+  --bg:#0e131b; --panel:#18202b; --panel2:#1f2937; --line:#2b3644;
+  --fg:#eef3f8; --muted:#8f9db0; --acc:#4a9edb; --ok:#3fb96f; --warn:#e4443a;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--fg); font-size:14px;
+  font-family:"Yu Gothic UI","Meiryo","Hiragino Kaku Gothic ProN",
+              "Noto Sans CJK JP","Noto Sans JP","IPAexGothic",sans-serif;
+  overflow:hidden; display:flex; flex-direction:column;
+}
+header{display:flex; align-items:center; gap:14px; padding:12px 20px;
+       border-bottom:1px solid var(--line); flex:none}
+header h1{font-size:20px; font-weight:800}
+header .sp{flex:1}
+.msg{font-size:13px; color:var(--muted)}
+.msg.ok{color:var(--ok)} .msg.ng{color:var(--warn)}
+
+button,select,input{font:inherit; color:var(--fg); background:var(--panel2);
+                    border:1px solid var(--line); border-radius:7px; padding:7px 12px}
+button{cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc); color:#0d1117; font-weight:800; border-color:var(--acc)}
+button.danger{border-color:#5a2f2f; color:#f0a0a0}
+button.on{background:var(--fg); color:#0d1117; border-color:var(--fg); font-weight:800}
+input{width:100%}
+label{display:block; font-size:12px; color:var(--muted); font-weight:700; margin:10px 0 4px}
+
+main{flex:1; display:grid; grid-template-columns:330px 1fr; min-height:0}
+aside{border-right:1px solid var(--line); background:var(--panel);
+      overflow-y:auto; padding:14px 16px 40px}
+.grp{border-top:1px solid var(--line); padding-top:12px; margin-top:14px}
+.grp:first-child{border-top:none; margin-top:0; padding-top:0}
+.grp h2{font-size:13px; font-weight:800; color:var(--muted); letter-spacing:.06em; margin-bottom:8px}
+.row{display:flex; gap:6px; align-items:center}
+.row > *{flex:1}
+.row > .n{flex:none}
+
+/* フロアタブ */
+.ftabs{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px}
+.ftabs button{padding:6px 12px; font-size:13px}
+
+/* 画像ドロップ */
+.drop{border:2px dashed var(--line); border-radius:10px; padding:18px 10px; text-align:center;
+      color:var(--muted); font-size:13px; cursor:pointer; line-height:1.7}
+.drop.hot{border-color:var(--acc); color:var(--fg)}
+
+/* 未配置ノード */
+.cards{display:flex; flex-wrap:wrap; gap:8px}
+.card{width:96px; padding:8px; border-radius:9px; background:var(--panel2);
+      border:1px solid var(--line); cursor:pointer; text-align:center}
+.card:hover{border-color:var(--acc)}
+.card.arm{background:var(--acc); color:#0d1117; border-color:var(--acc)}
+.card b{display:block; font-size:16px; font-weight:800}
+.card span{display:block; font-size:11px; opacity:.75; margin-top:2px}
+.list{display:flex; flex-direction:column; gap:4px}
+.list div{display:flex; gap:8px; padding:6px 9px; border-radius:7px; background:var(--panel2);
+          font-size:13px; cursor:pointer}
+.list div.on{outline:1px solid var(--acc)}
+.list div b{flex:none; color:var(--muted); font-weight:700}
+.list div span{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.empty{font-size:12px; color:#4c5a6c; padding:6px 0}
+
+/* 地図 */
+.canvas{position:relative; min-height:0; background:#111823}
+.canvas svg{width:100%; height:100%; display:block; touch-action:none}
+.canvas svg.place{cursor:crosshair}
+.tip{position:absolute; left:12px; bottom:10px; font-size:12px; color:var(--muted);
+     background:rgba(10,14,20,.85); padding:6px 11px; border-radius:6px; pointer-events:none}
+
+.room .rbg{fill:#2a3746; fill-opacity:.3; stroke:#465a72; stroke-width:2; vector-effect:non-scaling-stroke}
+.room[data-on="1"] .rbg{stroke:var(--acc); stroke-width:3; fill-opacity:.45}
+.room .rname{fill:#c6d3e2; font-weight:700; text-anchor:middle; pointer-events:none}
+.hnd{fill:var(--acc); stroke:#0d1117; stroke-width:1.5}
+.pin .dot{fill:#4a9edb; stroke:#fff; stroke-width:2.5}
+.pin[data-on="1"] .dot{fill:#fff; stroke:var(--acc); stroke-width:4}
+.pin .num{fill:#0d1117; font-weight:800; font-size:20px; text-anchor:middle}
+.pin .ltext{fill:#eef3f8; font-weight:700; font-size:15px; text-anchor:middle;
+            paint-order:stroke; stroke:#0d1117; stroke-width:4; stroke-linejoin:round}
+.draft{fill:rgba(74,158,219,.25); stroke:var(--acc); stroke-width:2; vector-effect:non-scaling-stroke}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>配置エディタ</h1>
+  <span class="msg" id="msg">読み込み中…</span>
+  <div class="sp"></div>
+  <a href="./" style="color:var(--muted); font-size:13px">表示画面へ</a>
+  <button class="primary" id="save">保存</button>
+</header>
+
+<main>
+  <aside>
+    <div class="grp">
+      <h2>フロア</h2>
+      <div class="ftabs" id="ftabs"></div>
+      <div class="row">
+        <button id="fadd">階を追加</button>
+        <button id="fup" class="n">↑</button>
+        <button id="fdown" class="n">↓</button>
+        <button id="fdel" class="danger n">削除</button>
+      </div>
+      <label>階の名前</label>
+      <input id="fname" placeholder="1階">
+    </div>
+
+    <div class="grp">
+      <h2>下敷きの図面</h2>
+      <div class="drop" id="drop">
+        画像をここにドロップ<br>（クリックで選択）<br>
+        <span style="font-size:11px">PDFは Firefox で開き Ctrl+Shift+S → PNG 保存</span>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <div id="imginfo" class="empty">画像なし（無地の平面図）</div>
+      <label>見せ方</label>
+      <select id="fview">
+        <option value="normal">そのまま</option>
+        <option value="invert">反転（暗い図面に・線画向け）</option>
+        <option value="dim">減光（背景に沈める）</option>
+      </select>
+      <div class="row" style="margin-top:8px">
+        <button id="fimgdel" class="danger">画像を外す</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>ツール</h2>
+      <div class="row">
+        <button id="tsel" class="on">選択・移動</button>
+        <button id="troom">部屋を描く</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>未配置のノード</h2>
+      <div class="cards" id="unplaced"></div>
+      <div class="empty" id="unplacedEmpty"></div>
+    </div>
+
+    <div class="grp">
+      <h2>選択中</h2>
+      <div id="props"><div class="empty">地図の部屋かノードを選んでください</div></div>
+    </div>
+
+    <div class="grp">
+      <h2>この階のノード</h2>
+      <div class="list" id="placed"></div>
+    </div>
+  </aside>
+
+  <div class="canvas">
+    <svg id="map" preserveAspectRatio="none"></svg>
+    <div class="tip" id="tip"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = id => document.getElementById(id);
+const el = (tag, a) => { const e = document.createElementNS(SVGNS, tag);
+  for (const k in a) if (a[k] !== null && a[k] !== undefined) e.setAttribute(k, a[k]); return e; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+
+/* ====== 状態 ====== */
+let site  = {title:"環境モニタ", floors:[], nodes:[]};
+let fi    = 0;                 // 編集中のフロア番号
+let tool  = "sel";             // "sel" | "room"
+let sel   = null;              // {kind:"room"|"node", id}
+let arm   = null;              // 配置待ちのノードID
+let live  = new Map();         // CSVに来ているノードID -> 最新値
+let dummy = false;             // サーバがダミーデータを出しているか
+let dirty = false;
+
+const F = () => site.floors[fi];
+const nodesHere = () => site.nodes.filter(n => n.floor === (F() ? F().id : null));
+
+function mark(){ dirty = true; msg("未保存の変更があります"); }
+function msg(t, cls=""){ const m = $("msg"); m.textContent = t; m.className = "msg " + cls; }
+
+/* ====== 読み込み ====== */
+async function boot(){
+  try{
+    site = await (await fetch("api/site", {cache:"no-store"})).json();
+  }catch(e){
+    return msg("site.json を読めません。server.py 経由で開いてください", "ng");
+  }
+  if (!site.floors) site.floors = [];
+  if (!site.nodes)  site.nodes  = [];
+  if (!site.floors.length) addFloor();
+  msg("読み込みました", "ok");
+  refreshLive();
+  setInterval(refreshLive, 5000);
+  drawAll();
+}
+
+async function refreshLive(){
+  try{
+    const j = await (await fetch("api/latest", {cache:"no-store"})).json();
+    live = new Map((j.nodes || []).map(n => [n.id, n.latest || {}]));
+    dummy = !!j.dummy;
+  }catch(e){ /* CSVがなくても編集はできる */ }
+  drawUnplaced();
+}
+
+/* ====== 表示範囲 ====== */
+let view = {x:0, y:0, w:100, h:100}, k = 1;
+function fitFloor(){
+  const f = F(); if (!f) return false;
+  const b = $("map").getBoundingClientRect();
+  if (b.width < 2 || b.height < 2) return false;  // 描画枠が確定する前は測り直しに任せる
+  const ar = b.width / b.height;
+  let x = 0, y = 0, w = f.w, h = f.h;
+  const m = Math.max(w, h) * 0.04; x -= m; y -= m; w += m*2; h += m*2;
+  if (w / h < ar){ const nw = h * ar; x -= (nw - w)/2; w = nw; }
+  else           { const nh = w / ar; y -= (nh - h)/2; h = nh; }
+  view = {x, y, w, h};
+  applyView();
+  return true;
+}
+function applyView(){
+  const svg = $("map");
+  svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+  k = view.w / Math.max(svg.getBoundingClientRect().width, 1);
+  scaleBits();
+}
+function toImg(ev){
+  const b = $("map").getBoundingClientRect();
+  return {x: view.x + (ev.clientX - b.left) / b.width  * view.w,
+          y: view.y + (ev.clientY - b.top ) / b.height * view.h};
+}
+
+/* ====== 地図の描画 ====== */
+function drawAll(){ drawTabs(); drawFloorForm(); drawMap(); drawUnplaced(); drawPlaced(); drawProps(); }
+
+function drawMap(){
+  const svg = $("map"), f = F();
+  svg.innerHTML = "";
+  if (!f) return;
+
+  if (f.image) svg.appendChild(el("image", {href:f.image, x:0, y:0, width:f.w, height:f.h,
+                                            style:bgFilter(f.view)}));
+  else         svg.appendChild(el("rect",  {x:0, y:0, width:f.w, height:f.h, fill:"#141c26",
+                                            stroke:"#2b3644", "stroke-width":2}));
+
+  for (const r of (f.rooms || [])){
+    const g = el("g", {class:"room", "data-kind":"room", "data-id":r.id,
+                       "data-on": sel && sel.kind==="room" && sel.id===r.id ? "1" : "0"});
+    g.appendChild(el("rect", {class:"rbg", x:r.x, y:r.y, width:r.w, height:r.h, rx:6}));
+    const t = el("text", {class:"rname", x:r.x + r.w/2, y:r.y + r.h/2, "data-px":24});
+    t.textContent = r.name;
+    g.appendChild(t);
+    if (sel && sel.kind === "room" && sel.id === r.id)
+      g.appendChild(el("rect", {class:"hnd", "data-kind":"handle",
+                                x:r.x + r.w, y:r.y + r.h, width:1, height:1}));
+    svg.appendChild(g);
+  }
+
+  for (const n of nodesHere()){
+    const g = el("g", {class:"pin", "data-kind":"node", "data-id":n.id,
+                       "data-on": sel && sel.kind==="node" && sel.id===n.id ? "1" : "0"});
+    g.appendChild(el("circle", {class:"dot", r:22}));
+    const num = el("text", {class:"num", y:7}); num.textContent = n.id;
+    g.appendChild(num);
+    const nm = el("text", {class:"ltext", y:44}); nm.textContent = n.name || ("node " + n.id);
+    g.appendChild(nm);
+    svg.appendChild(g);
+  }
+  fitKeep();
+}
+/* 初回はフロア全体に合わせ、以降は今の表示範囲を保つ */
+let fitted = false;
+function fitKeep(){
+  const b = $("map").getBoundingClientRect();
+  if (b.width < 2 || b.height < 2) return;        // まだ測れない。次の変化で呼び直される
+  if (!fitted){ fitted = fitFloor(); return; }    // 合わせられたときだけ初回を済ませたことにする
+  /* 枠の形が変わったら、中心と横倍率を保ったまま高さだけ合わせ直す。
+     preserveAspectRatio="none" なので、これを怠ると図面が縦に伸びる */
+  const h = view.w * b.height / b.width;
+  view.y += (view.h - h) / 2;
+  view.h = h;
+  applyView();
+}
+
+function bgFilter(v){
+  if (v === "invert") return "filter:invert(1) hue-rotate(180deg) brightness(.86)";
+  if (v === "dim")    return "filter:brightness(.45) contrast(1.1)";
+  return "";
+}
+
+/* ピン・文字・ハンドルを画面上で一定の大きさに保つ */
+function scaleBits(){
+  const svg = $("map");
+  for (const g of svg.querySelectorAll(".pin")){
+    const n = site.nodes.find(v => String(v.id) === g.dataset.id);
+    if (n) g.setAttribute("transform", `translate(${n.x},${n.y}) scale(${k})`);
+  }
+  for (const t of svg.querySelectorAll(".rname")) t.setAttribute("font-size", 24 * k);
+  for (const h of svg.querySelectorAll(".hnd")){
+    const s = 12 * k;
+    h.setAttribute("width", s); h.setAttribute("height", s);
+    h.setAttribute("x", +h.getAttribute("x") ); h.setAttribute("y", +h.getAttribute("y"));
+    h.setAttribute("transform", `translate(${-s/2},${-s/2})`);
+  }
+  $("tip").textContent = tool === "room"
+    ? "ドラッグで部屋の四角を描く"
+    : (arm !== null ? `node ${arm} を置く位置をクリック` : "ホイール: 拡大 / ドラッグ: 移動");
+}
+
+/* ====== サイドバー ====== */
+function drawTabs(){
+  $("ftabs").innerHTML = site.floors.map((f, i) =>
+    `<button data-i="${i}" class="${i===fi?"on":""}">${esc(f.name)}</button>`).join("");
+}
+function drawFloorForm(){
+  const f = F();
+  $("fname").value = f ? f.name : "";
+  $("fview").value = f ? (f.view || "normal") : "normal";
+  $("imginfo").textContent = f && f.image ? `${f.image}（${f.w}×${f.h}px）`
+                                          : "画像なし（無地の平面図）";
+}
+function drawUnplaced(){
+  const placed = new Set(site.nodes.map(n => n.id));
+  const list = [...live.keys()].filter(id => !placed.has(id)).sort((a,b) => a-b);
+  $("unplaced").innerHTML = list.map(id => {
+    const L = live.get(id) || {};
+    const v = (L.wbgt !== null && L.wbgt !== undefined) ? `WBGT ${L.wbgt}`
+            : (L.t !== null && L.t !== undefined) ? `${L.t}℃` : "計測失敗";
+    return `<div class="card ${arm===id?"arm":""}" data-id="${id}"><b>node ${id}</b><span>${v}</span></div>`;
+  }).join("");
+  $("unplacedEmpty").textContent =
+    dummy       ? "ダミーデータモードです。番号は実機のものではありません。"
+    : list.length ? ""
+    : live.size   ? "すべて配置済みです"
+                  : "CSVにデータがありません。手動で追加してください。";
+}
+function drawPlaced(){
+  const ns = nodesHere();
+  $("placed").innerHTML = ns.length ? ns.map(n =>
+    `<div data-id="${n.id}" class="${sel&&sel.kind==="node"&&sel.id===n.id?"on":""}">
+       <b>${n.id}</b><span>${esc(n.name || "")}</span></div>`).join("")
+    : `<div class="empty">この階にはまだありません</div>`;
+}
+function drawProps(){
+  const box = $("props");
+  if (!sel){ box.innerHTML = `<div class="empty">地図の部屋かノードを選んでください</div>`; return; }
+  if (sel.kind === "room"){
+    const r = (F().rooms || []).find(v => v.id === sel.id);
+    if (!r){ sel = null; return drawProps(); }
+    box.innerHTML = `
+      <label>部屋の名前</label><input id="pname" value="${esc(r.name)}">
+      <div class="row" style="margin-top:10px"><button class="danger" id="pdel">この部屋を削除</button></div>`;
+    $("pname").oninput = e => { r.name = e.target.value; mark(); drawMap(); };
+    $("pdel").onclick  = () => { F().rooms = F().rooms.filter(v => v.id !== r.id);
+                                 sel = null; mark(); drawMap(); drawProps(); };
+  }else{
+    const n = site.nodes.find(v => v.id === sel.id);
+    if (!n){ sel = null; return drawProps(); }
+    box.innerHTML = `
+      <label>ノード ${n.id} の名前</label><input id="pname" value="${esc(n.name || "")}">
+      <label>補足</label><input id="psub" value="${esc(n.sub || "")}">
+      <div class="row" style="margin-top:10px"><button class="danger" id="pdel">配置を外す</button></div>`;
+    $("pname").oninput = e => { n.name = e.target.value; mark(); drawMap(); drawPlaced(); };
+    $("psub").oninput  = e => { n.sub  = e.target.value; mark(); };
+    $("pdel").onclick  = () => { site.nodes = site.nodes.filter(v => v.id !== n.id);
+                                 sel = null; mark(); drawMap(); drawPlaced(); drawUnplaced(); drawProps(); };
+  }
+}
+
+/* ====== フロア操作 ====== */
+function uid(pre){ return pre + Math.random().toString(36).slice(2, 7); }
+function addFloor(){
+  site.floors.push({id:uid("f"), name:(site.floors.length + 1) + "階",
+                    image:null, view:"normal", w:1600, h:1000, rooms:[]});
+  fi = site.floors.length - 1; fitted = false; mark();
+}
+$("fadd").onclick  = () => { addFloor(); drawAll(); };
+$("fdel").onclick  = () => {
+  const f = F(); if (!f) return;
+  if (nodesHere().length && !confirm("この階のノード配置も消えます。よろしいですか？")) return;
+  site.nodes  = site.nodes.filter(n => n.floor !== f.id);
+  site.floors.splice(fi, 1);
+  fi = Math.max(0, fi - 1); fitted = false;
+  if (!site.floors.length) addFloor();
+  sel = null; mark(); drawAll();
+};
+const swapFloor = d => {
+  const j = fi + d;
+  if (j < 0 || j >= site.floors.length) return;
+  [site.floors[fi], site.floors[j]] = [site.floors[j], site.floors[fi]];
+  fi = j; mark(); drawAll();
+};
+$("fup").onclick   = () => swapFloor(1);    // 表示画面では下から積むので「↑」は後ろへ
+$("fdown").onclick = () => swapFloor(-1);
+$("fname").oninput = e => { if (F()){ F().name = e.target.value; mark(); drawTabs(); } };
+$("fview").onchange= e => { if (F()){ F().view = e.target.value; mark(); drawMap(); } };
+$("ftabs").onclick = e => { const b = e.target.closest("button");
+                            if (b){ fi = +b.dataset.i; sel = null; fitted = false; drawAll(); } };
+
+/* ====== 画像 ====== */
+$("drop").onclick = () => $("file").click();
+$("file").onchange = e => { if (e.target.files[0]) upload(e.target.files[0]); };
+["dragenter","dragover"].forEach(t => $("drop").addEventListener(t, e => {
+  e.preventDefault(); $("drop").classList.add("hot"); }));
+["dragleave","drop"].forEach(t => $("drop").addEventListener(t, e => {
+  e.preventDefault(); $("drop").classList.remove("hot"); }));
+$("drop").addEventListener("drop", e => { if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); });
+
+async function upload(file){
+  const f = F(); if (!f) return;
+  if (!/^image\//.test(file.type)) return msg("画像ファイルを指定してください", "ng");
+  msg("アップロード中…");
+  try{
+    const name = f.id + "." + (file.name.split(".").pop() || "png").toLowerCase();
+    const res  = await fetch("api/map/" + encodeURIComponent(name), {method:"POST", body:file});
+    const j    = await res.json();
+    if (j.error) throw new Error(j.error);
+    /* 画像の実ピクセルをそのまま座標系にする */
+    const img = new Image();
+    img.onload = () => {
+      f.image = j.path;
+      f.w = img.naturalWidth; f.h = img.naturalHeight;   // 画像の実ピクセルをそのまま座標系にする
+      fitted = false; mark(); drawFloorForm(); drawMap();
+      msg(`${img.naturalWidth}×${img.naturalHeight}px を読み込みました`, "ok");
+    };
+    img.onerror = () => msg("画像を読めませんでした", "ng");
+    img.src = j.path;
+  }catch(err){ msg("アップロード失敗: " + err.message, "ng"); }
+}
+$("fimgdel").onclick = () => { const f = F(); if (!f) return;
+  f.image = null; f.w = 1600; f.h = 1000; fitted = false; mark(); drawFloorForm(); drawMap(); };
+
+/* ====== ツール ====== */
+function setTool(t){
+  tool = t; arm = null;
+  $("tsel").classList.toggle("on", t === "sel");
+  $("troom").classList.toggle("on", t === "room");
+  $("map").classList.toggle("place", false);
+  scaleBits(); drawUnplaced();
+}
+$("tsel").onclick  = () => setTool("sel");
+$("troom").onclick = () => setTool("room");
+
+$("unplaced").onclick = e => {
+  const c = e.target.closest(".card"); if (!c) return;
+  arm = (arm === +c.dataset.id) ? null : +c.dataset.id;
+  tool = "sel";
+  $("map").classList.toggle("place", arm !== null);
+  drawUnplaced(); scaleBits();
+};
+$("placed").onclick = e => {
+  const d = e.target.closest("div[data-id]"); if (!d) return;
+  sel = {kind:"node", id:+d.dataset.id}; drawMap(); drawPlaced(); drawProps();
+};
+
+/* ====== 地図の操作 ====== */
+const svg = $("map");
+let act = null, moved = false;
+
+svg.addEventListener("pointerdown", e => {
+  const f = F(); if (!f) return;
+  const p = toImg(e);
+  moved = false;
+  try{ svg.setPointerCapture(e.pointerId); }catch(err){}
+
+  if (arm !== null){                                 // 未配置ノードを置く
+    site.nodes.push({id:arm, name:"node " + arm, sub:"", floor:f.id,
+                     x:Math.round(p.x), y:Math.round(p.y)});
+    sel = {kind:"node", id:arm}; arm = null;
+    svg.classList.remove("place");
+    mark(); drawMap(); drawPlaced(); drawUnplaced(); drawProps();
+    return;
+  }
+  const hit = e.target.closest("[data-kind]");
+  const kind = hit && hit.dataset.kind;
+
+  if (tool === "room" && kind !== "node"){
+    act = {t:"draw", x0:p.x, y0:p.y};
+    svg.appendChild(el("rect", {class:"draft", id:"draft", x:p.x, y:p.y, width:0, height:0}));
+    return;
+  }
+  if (kind === "handle"){
+    act = {t:"resize", room:(f.rooms||[]).find(r => r.id === sel.id)};
+    return;
+  }
+  if (kind === "node"){
+    const n = site.nodes.find(v => String(v.id) === hit.dataset.id);
+    sel = {kind:"node", id:n.id};
+    act = {t:"movenode", n, dx:n.x - p.x, dy:n.y - p.y};
+    drawMap(); drawPlaced(); drawProps();
+    return;
+  }
+  if (kind === "room"){
+    const r = (f.rooms||[]).find(v => v.id === hit.dataset.id);
+    sel = {kind:"room", id:r.id};
+    act = {t:"moveroom", r, dx:r.x - p.x, dy:r.y - p.y};
+    drawMap(); drawProps();
+    return;
+  }
+  act = {t:"pan", cx:e.clientX, cy:e.clientY};
+  sel = null; drawMap(); drawPlaced(); drawProps();
+});
+
+svg.addEventListener("pointermove", e => {
+  if (!act) return;
+  moved = true;
+  const p = toImg(e);
+  if (act.t === "pan"){
+    view.x -= (e.clientX - act.cx) * k; view.y -= (e.clientY - act.cy) * k;
+    act.cx = e.clientX; act.cy = e.clientY; applyView(); return;
+  }
+  if (act.t === "draw"){
+    const d = $("draft");
+    d.setAttribute("x", Math.min(act.x0, p.x)); d.setAttribute("y", Math.min(act.y0, p.y));
+    d.setAttribute("width",  Math.abs(p.x - act.x0));
+    d.setAttribute("height", Math.abs(p.y - act.y0));
+    return;
+  }
+  if (act.t === "movenode"){
+    act.n.x = Math.round(p.x + act.dx); act.n.y = Math.round(p.y + act.dy);
+    const g = svg.querySelector(`.pin[data-id="${act.n.id}"]`);
+    g.setAttribute("transform", `translate(${act.n.x},${act.n.y}) scale(${k})`);
+    return;
+  }
+  if (act.t === "moveroom" || act.t === "resize"){
+    const r = act.r || act.room;
+    if (act.t === "moveroom"){ r.x = Math.round(p.x + act.dx); r.y = Math.round(p.y + act.dy); }
+    else { r.w = Math.max(40, Math.round(p.x - r.x)); r.h = Math.max(40, Math.round(p.y - r.y)); }
+    drawMap();
+  }
+});
+
+svg.addEventListener("pointerup", () => {
+  if (act && act.t === "draw"){
+    const d = $("draft");
+    const w = +d.getAttribute("width"), h = +d.getAttribute("height");
+    d.remove();
+    if (w > 30 && h > 30){
+      const r = {id:uid("r"), name:"部屋" + ((F().rooms||[]).length + 1),
+                 x:Math.round(+d.getAttribute("x")), y:Math.round(+d.getAttribute("y")),
+                 w:Math.round(w), h:Math.round(h)};
+      (F().rooms = F().rooms || []).push(r);
+      sel = {kind:"room", id:r.id};
+      setTool("sel");
+      mark(); drawMap(); drawProps();
+    }
+  }else if (act && moved){ mark(); }
+  act = null;
+});
+
+svg.addEventListener("wheel", e => {
+  e.preventDefault();
+  const p = toImg(e);
+  const s = Math.exp(e.deltaY * 0.0015);
+  view = {x:p.x - (p.x - view.x)*s, y:p.y - (p.y - view.y)*s, w:view.w*s, h:view.h*s};
+  applyView();
+}, {passive:false});
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "Escape"){ arm = null; sel = null; setTool("sel"); drawMap(); drawProps(); }
+  if (e.key === "Delete" && sel) $("pdel") && $("pdel").click();
+  if (e.key === "f" || e.key === "F") fitFloor();
+});
+/* 起動直後はレイアウトが確定していないので、枠の大きさを監視して縮尺を取り直す */
+new ResizeObserver(() => fitKeep()).observe($("map"));
+
+/* ====== 保存 ====== */
+$("save").onclick = async () => {
+  msg("保存中…");
+  try{
+    const res = await fetch("api/site", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(site)});
+    const j = await res.json();
+    if (j.error) throw new Error(j.error);
+    dirty = false;
+    msg(`保存しました（${j.floors}階 / ${j.nodes}ノード）`, "ok");
+  }catch(err){
+    msg("保存できません: " + err.message + " — ダウンロードします", "ng");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(site, null, 2)], {type:"application/json"}));
+    a.download = "site.json"; a.click();
+  }
+};
+addEventListener("beforeunload", e => { if (dirty){ e.preventDefault(); e.returnValue = ""; } });
+
+boot();
+</script>
+</body>
+</html>
