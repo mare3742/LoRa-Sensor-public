@@ -29,7 +29,7 @@ TAIL_BYTES  = 512 * 1024    # CSVは末尾だけ読む（肥大しても速度�
 TS_FORMAT   = '%Y-%m-%d %H:%M:%S'
 MAX_UPLOAD  = 24 * 1024 * 1024
 
-ROOT      = Path(__file__).resolve().parent   # リポジトリ直下
+ROOT      = Path(__file__).resolve().parent   # このファイルのあるフォルダ（pi/）
 WEB_DIR   = ROOT / 'web'                      # viewer/editor/site.json/maps の置き場
 CSV_FILE  = Path(os.environ.get('CSV_FILE', ROOT / 'data.csv'))
 SITE_FILE = WEB_DIR / 'site.json'

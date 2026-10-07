@@ -8,10 +8,10 @@ from collections import defaultdict, deque
 # ===== 設定 =====
 SERIAL_PORT = 'COM13'       # シリアルポート (例: '/dev/ttyUSB0' on Linux/Mac)
 BAUD_RATE = 115200
-# リポジトリ直下の data.csv。カレントディレクトリに依存しない
+# このファイルと同じフォルダ（pi/）の data.csv。カレントディレクトリに依存しない
 OUTPUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data.csv')
 RECONNECT_INTERVAL = 5     # 再接続試行間隔（秒）
-TS_FORMAT = '%Y-%m-%d %H:%M:%S'   # web/demo/server.py・web/monitor/server.py と揃えること
+TS_FORMAT = '%Y-%m-%d %H:%M:%S'   # server.py の TS_FORMAT と揃えること
 # ================
 
 def save_to_csv(rows):

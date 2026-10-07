@@ -3,9 +3,9 @@ firmware/.pio/
 .vscode/
 
 # 計測データ
-data.csv
+pi/data.csv
 
 # アップロードした平面図（施設情報を含みうるので追跡しない）
-web/maps/
+pi/web/maps/
 
 __pycache__/
