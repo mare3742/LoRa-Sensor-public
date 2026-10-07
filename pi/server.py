@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # ===== 設定 =====
 HTTP_PORT   = 8001          # 表示サーバの待ち受けポート
+HTTP_HOST   = os.environ.get('HOST', '0.0.0.0')   # 待ち受けアドレス（自分のPCだけなら 127.0.0.1）
 HISTORY_MAX = 30            # 1ノードあたりグラフに渡す件数
 NAN_LIMIT   = 200.0         # 子機の計測失敗値 0x7FFF(=3276.7) を弾く閾値
 TAIL_BYTES  = 512 * 1024    # CSVは末尾だけ読む（肥大しても速度が落ちない）
@@ -274,7 +275,7 @@ def main():
     print(f"表示画面    : http://localhost:{HTTP_PORT}/")
     print(f"配置エディタ: http://localhost:{HTTP_PORT}/editor")
     try:
-        ThreadingHTTPServer(('0.0.0.0', HTTP_PORT), Handler).serve_forever()
+        ThreadingHTTPServer((HTTP_HOST, HTTP_PORT), Handler).serve_forever()
     except KeyboardInterrupt:
         print("終了します")
 
