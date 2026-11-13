@@ -13,12 +13,9 @@ WBGT（暑さ指数）を計算して平面図上に表示するシステム。
 
 LoRa通信にはE220モジュールを使用する~[設定必須](firmware/README.md)~
 このリポジトリは **ソフトウェア側（ファームウェアとラズパイ/PC 側）** だけを置いている。
-筐体・配線・全体の組み立て手順は別リポジトリにまとめる予定（準備中）。
-<!-- docs リポジトリを作ったら、ここに URL を入れる -->
+基板・筐体は [LoRa-Sensor-hardware](https://github.com/mare3742/LoRa-Sensor-hardware)。
 
 ## どこを読めばいいか
-
-やりたいことの行を選んで、リンク先に進む。
 
 | やりたいこと | 読むもの |
 |---|---|
@@ -30,11 +27,4 @@ LoRa通信にはE220モジュールを使用する~[設定必須](firmware/READM
 | センサなしで画面だけ試す | [pi/README.md の「まず試す」](pi/README.md#まず試す) |
 | 書き込みでエラーが出た / `pio` が見つからない | [firmware/README.md の「困ったとき」](firmware/README.md#困ったとき) |
 | ピン配置・通信の仕組みを知りたい | [firmware/README.md の「リファレンス」](firmware/README.md#リファレンス) |
-
-## フォルダ構成
-
-| パス | 中身 |
-|---|---|
-| [`firmware/`](firmware/) | 親機・子機・E220 設定ツールのファームウェア（PlatformIO / Arduino / Seeed XIAO ESP32S3） |
-| [`pi/`](pi/) | ラズパイ（または PC）で動かす側。USB シリアルの収集 `serial_to_csv.py`、表示サーバ `server.py`、画面 `web/` |
 

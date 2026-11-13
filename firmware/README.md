@@ -22,17 +22,27 @@ pip install -U platformio
 
 ### 1. 書き込む
 
-マイコンを USB でつないで、リポジトリの**ルート**で次を実行する。書き込みたいものの行だけ実行すればよい。
+マイコンを USB でつないで、**リポジトリのルートから `cd firmware` した状態**で書き込みたいものを実行する。
+
+親機
 
 ```sh
-pio run -d firmware -e oya  -t upload   # 親機
-pio run -d firmware -e koki -t upload   # 子機
-pio run -d firmware -e set  -t upload   # E220設定ツール
+pio run -e oya -t upload
 ```
 
-- `-d firmware` … `platformio.ini` が `firmware/` の中にあるので、その場所を教える（`cd firmware` してから `-d` なしで実行してもよい）。
-- `-e` … **必ず付ける**。付けないと 3 種類を全部ビルドしに行く。
-- 最後に `[SUCCESS]` と出れば書き込み完了。
+子機
+
+```sh
+pio run -e koki -t upload
+```
+
+E220 設定ツール
+
+```sh
+pio run -e set -t upload
+```
+
+最後に `[SUCCESS]` と出れば書き込み完了。
 
 初回だけ、ツールチェーンとライブラリが自動でダウンロードされる（約 1GB、数分かかる）。先に何かを入れる必要はない。
 
@@ -47,9 +57,14 @@ pio device monitor -b 115200
 ```
 
 - `o` を入力 → 親機用の設定を E220 に書き込む
-- `k` を入力 → 子機用の設定を E220 に書き込む
+- `k` を入力 → 子機用の設定を E220 に書き込む。子機番号（1, 2, 3…）が自動で振られ、画面に表示される
 
 設定が終わったら、`oya` または `koki` を書き込み直す。ポート一覧は `pio device list`。
+
+**子機が複数あるとき**は、`set` を動かしたまま E220 だけを差し替えていく。`[READY]` が出たら次の E220 に替える。番号は書き込むたびに 1 つ増えるが、再起動すると 1 に戻る。子機ごとに `set` を書き込み直すと全部 1 番になる。
+割り当てた番号は子機に控えておく（配置エディタでノード番号として使う）。
+
+親機が集めるのは [`src/oya.cpp`](src/oya.cpp) の `NODE_ADDL` に並べた番号（初期値 1〜6）だけ。子機を 7 台以上にするときはここに番号を足す。
 
 ## 困ったとき
 
@@ -59,42 +74,11 @@ pio device monitor -b 115200
 
 ### `pio` が見つからない
 
-`pio: command not found` や `'pio' is not recognized` と出る場合は、次の 2 通りのどちらか。`pio` と `platformio` は同じコマンドなので、どちらで書いてもよい。
-
-まず、どちらの状態か判別する。
+`pip install -U platformio` を実行してから、`pio` の代わりに `python -m platformio` と書く。
 
 ```sh
-python -m platformio --version
+python -m platformio run -e oya -t upload
 ```
-
-- **バージョンが出た** → 下の「A. pip で入れたが PATH に無い」
-- **`No module named platformio`** → 下の「B. VS Code 拡張で入れた」
-
-**A. pip で入れたが PATH に無い**
-
-`pio` の代わりに `python -m platformio` と書けばよい。
-
-```sh
-python -m platformio run -d firmware -e oya -t upload
-```
-
-**B. VS Code 拡張で入れた**
-
-拡張が `~/.platformio/penv/` に専用の仮想環境を作るので、普通の `python` には platformio が入っていない。フルパスで呼ぶ。
-
-```powershell
-& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -d firmware -e oya -t upload
-```
-
-```bash
-"$HOME/.platformio/penv/bin/pio" run -d firmware -e oya -t upload
-```
-
-**恒久的に直したいとき** — VS Code のコマンドパレットから `PlatformIO: New Terminal` を開く（PATH が通った状態で起動する）。または `penv/Scripts`（Linux/macOS は `penv/bin`）を PATH に追加する。
-
-### ビルドのたびに違う版が入る
-
-`platformio.ini` の `platform = espressif32` はバージョンを固定していないので、環境によって入る版が変わる。動作確認済みの組み合わせは **espressif32 6.12.0 / framework-arduinoespressif32 3.20017**。揃えたいときは `platformio.ini` を `platform = espressif32@6.12.0` に書き換える。
 
 ## リファレンス
 
